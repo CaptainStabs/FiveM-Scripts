@@ -59,6 +59,33 @@ local function ensureAnimDict(animDict)
     return animDict
 end
 
+RegisterNetEvent("CarryPeople:Carry")
+AddEventHandler("CarryPeople:Carry", function(source, args)
+	if not carry.InProgress then
+		local closestPlayer = GetClosestPlayer(3)
+		if closestPlayer then
+			local targetSrc = GetPlayerServerId(closestPlayer)
+			if targetSrc ~= -1 then
+				carry.InProgress = true
+				carry.targetSrc = targetSrc
+				TriggerServerEvent("CarryPeople:sync",targetSrc)
+				ensureAnimDict(carry.personCarrying.animDict)
+				carry.type = "carrying"
+			else
+				drawNativeNotification("~r~No one nearby to carry!")
+			end
+		else
+			drawNativeNotification("~r~No one nearby to carry!")
+		end
+	else
+		carry.InProgress = false
+		ClearPedSecondaryTask(PlayerPedId())
+		DetachEntity(PlayerPedId(), true, false)
+		TriggerServerEvent("CarryPeople:stop",carry.targetSrc)
+		carry.targetSrc = 0
+	end
+end)
+
 RegisterCommand("carry",function(source, args)
 	if not carry.InProgress then
 		local closestPlayer = GetClosestPlayer(3)
@@ -102,18 +129,56 @@ AddEventHandler("CarryPeople:cl_stop", function()
 end)
 
 Citizen.CreateThread(function()
-	while true do
-		if carry.InProgress then
-			if carry.type == "beingcarried" then
-				if not IsEntityPlayingAnim(PlayerPedId(), carry.personCarried.animDict, carry.personCarried.anim, 3) then
-					TaskPlayAnim(PlayerPedId(), carry.personCarried.animDict, carry.personCarried.anim, 8.0, -8.0, 100000, carry.personCarried.flag, 0, false, false, false)
+    while true do
+        if carry.InProgress then
+            if carry.type == "beingcarried" then
+                if not IsEntityPlayingAnim(PlayerPedId(), carry.personCarried.animDict, carry.personCarried.anim, 3) then
+                    TaskPlayAnim(PlayerPedId(), carry.personCarried.animDict, carry.personCarried.anim, 8.0, -8.0, 100000, carry.personCarried.flag, 0, false, false, false)
+                end
+
+                if carry.wiggleTimer then
+                    carry.wiggleTimer = carry.wiggleTimer - 1
+                    if carry.wiggleTimer <= 0 then
+                        carry.InProgress = false
+                        ClearPedSecondaryTask(PlayerPedId())
+                        DetachEntity(PlayerPedId(), true, false)
+                        TriggerServerEvent("CarryPeople:stop", carry.targetSrc)
+                        carry.targetSrc = 0
+                    else
+                        drawNativeNotification("~b~Press ~INPUT_CELLPHONE_CAMERA_FOCUS_LOCK~ to wiggle out")
+                    end
+                end
+            elseif carry.type == "carrying" then
+                if not IsEntityPlayingAnim(PlayerPedId(), carry.personCarrying.animDict, carry.personCarrying.anim, 3) then
+                    TaskPlayAnim(PlayerPedId(), carry.personCarrying.animDict, carry.personCarrying.anim, 8.0, -8.0, 100000, carry.personCarrying.flag, 0, false, false, false)
+                end
+
+				if IsControlJustPressed(0, 73) then
+					ClearPedSecondaryTask(PlayerPedId())
+					TriggerServerEvent("CarryPeople:stop", carry.targetSrc)
+					carry.InProgress = False
 				end
-			elseif carry.type == "carrying" then
-				if not IsEntityPlayingAnim(PlayerPedId(), carry.personCarrying.animDict, carry.personCarrying.anim, 3) then
-					TaskPlayAnim(PlayerPedId(), carry.personCarrying.animDict, carry.personCarrying.anim, 8.0, -8.0, 100000, carry.personCarrying.flag, 0, false, false, false)
-				end
-			end
-		end
-		Wait(0)
-	end
+            end
+        end
+        Wait(0)
+    end
+end)
+
+-- Add the following key handling logic at the end of the script
+
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(0)
+        if carry.InProgress and carry.type == "beingcarried" then
+            if IsControlJustPressed(0, 74) then -- H key
+                carry.wiggleTimer = 0 -- Reset the wiggle timer
+                Citizen.Wait(3000) -- Wait for 3 seconds
+                carry.InProgress = false
+                ClearPedSecondaryTask(PlayerPedId())
+                DetachEntity(PlayerPedId(), true, false)
+                TriggerServerEvent("CarryPeople:stop", carry.targetSrc)
+                carry.targetSrc = 0
+            end
+        end
+    end
 end)
